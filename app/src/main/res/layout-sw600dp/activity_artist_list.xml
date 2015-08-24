@@ -1,0 +1,34 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_marginLeft="16dp"
+    android:layout_marginRight="16dp"
+    android:layout_marginTop="@dimen/activity_vertical_margin"
+    android:layout_marginBottom="@dimen/activity_vertical_margin"
+    android:baselineAligned="false"
+    android:divider="?android:attr/dividerHorizontal"
+    android:orientation="horizontal"
+    android:showDividers="middle"
+    tools:context="com.adipso.udacity.spotifystreamer_p2.activity.ArtistListActivity">
+
+    <!--
+    This layout is a two-pane layout for the Artists
+    master/detail flow.
+    -->
+
+    <fragment
+        android:id="@+id/artist_list"
+        android:name="com.adipso.udacity.spotifystreamer_p2.activity.ArtistListFragment"
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="match_parent"
+        tools:layout="@android:layout/list_content" />
+
+    <FrameLayout
+        android:id="@+id/artist_detail_container"
+        android:layout_width="0dp"
+        android:layout_weight="2"
+        android:layout_height="match_parent"  />
+
+</LinearLayout>

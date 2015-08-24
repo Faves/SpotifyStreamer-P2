@@ -1,0 +1,24 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:orientation="vertical"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context="com.adipso.udacity.spotifystreamer_p2.activity.ArtistListFragment">
+
+    <EditText
+        android:id="@+id/txt_search"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:inputType="textPersonName"
+        android:ems="10"/>
+
+    <ListView
+        android:id="@+id/lv_artists"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:divider="@drawable/list_divider_artist"
+        android:dividerHeight="1dp"
+        android:drawSelectorOnTop="false"
+        tools:listitem="@layout/list_item_artist"/>
+
+</LinearLayout>
