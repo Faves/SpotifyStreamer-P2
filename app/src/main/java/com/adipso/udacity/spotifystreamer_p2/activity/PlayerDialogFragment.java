@@ -1,12 +1,19 @@
 package com.adipso.udacity.spotifystreamer_p2.activity;
 
+import android.app.Activity;
 import android.app.Dialog;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.ServiceConnection;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Message;
 import android.support.annotation.NonNull;
 import android.support.v4.app.DialogFragment;
@@ -14,8 +21,9 @@ import android.support.v4.app.FragmentManager;
 import android.support.v4.app.LoaderManager;
 import android.support.v4.content.AsyncTaskLoader;
 import android.support.v4.content.Loader;
+import android.support.v4.content.LocalBroadcastManager;
 import android.text.TextUtils;
-import android.util.Pair;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -31,18 +39,10 @@ import android.widget.Toast;
 
 import com.adipso.udacity.spotifystreamer_p2.R;
 import com.adipso.udacity.spotifystreamer_p2.model.CustomTrack;
-import com.adipso.udacity.spotifystreamer_p2.model.CustomTrackHelper;
 import com.adipso.udacity.spotifystreamer_p2.model.TrackDataSource;
+import com.adipso.udacity.spotifystreamer_p2.service.BasePlayerBroadcastReceiver;
+import com.adipso.udacity.spotifystreamer_p2.service.PlayerService;
 import com.squareup.picasso.Picasso;
-
-import java.util.ArrayList;
-import java.util.Hashtable;
-import java.util.List;
-
-import kaaes.spotify.webapi.android.SpotifyApi;
-import kaaes.spotify.webapi.android.SpotifyService;
-import kaaes.spotify.webapi.android.models.Track;
-import kaaes.spotify.webapi.android.models.Tracks;
 
 
 public class PlayerDialogFragment extends DialogFragment implements
@@ -75,6 +75,7 @@ public class PlayerDialogFragment extends DialogFragment implements
 
     private static final int SHOW_PROGRESS = 1;
     private static final String STATE_POSITION_PLAYER = "position_player";
+    private static final String STATE_DURATION_PLAYER = "duration_player";
 
 
     private TextView txt_artist;
@@ -89,11 +90,20 @@ public class PlayerDialogFragment extends DialogFragment implements
     private Long mIdTra, mIdMin, mIdMax;
     private CustomTrack mTrack;
     private Picasso mPicasso;
-    private MediaPlayer mediaPlayer;
     private ProgressHandler mHandler;
-    private PlayerTasks mPlayerTasks;
-    private boolean mIsMediaPlayerPrepared;
+    private PlayerService mBoundService;
+    private boolean mIsBound;
     private int mCurrentPositionPlayer;
+    private int mCurrentDurationPlayer;
+    private MyPlayerBroadcastReceiver mPlayerBroadcastReceiver;
+
+    public PlayerDialogFragment() {
+        super();
+
+        mIsBound = false;
+        mBoundService = null;
+        mPlayerBroadcastReceiver = null;
+    }
 
     /** The system calls this only when creating the layout in a dialog. */
     @Override
@@ -108,6 +118,16 @@ public class PlayerDialogFragment extends DialogFragment implements
         return dialog;
     }
 
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+
+        //start PlayerService to keep it alive on rotation
+        Activity activity = getActivity();
+        Intent intent = new Intent(activity, PlayerService.class);
+        activity.startService(intent);
+    }
+
     /** The system calls this to get the DialogFragment's layout, regardless
      of whether it's being displayed as a dialog or an embedded fragment. */
     @Override
@@ -120,10 +140,8 @@ public class PlayerDialogFragment extends DialogFragment implements
         //init
         mPicasso = Picasso.with(context);
         mHandler = new ProgressHandler();
-        mediaPlayer = null;
-        mPlayerTasks = null;
-        mIsMediaPlayerPrepared = false;
         mCurrentPositionPlayer = 0;
+        mCurrentDurationPlayer = 0;
 
         //params
         mIdTra = mIdMin = mIdMax = null;
@@ -151,9 +169,14 @@ public class PlayerDialogFragment extends DialogFragment implements
                 mIdMin = savedInstanceState.getLong(ARG_ID_MIN);
                 mIdMax = savedInstanceState.getLong(ARG_ID_MAX);
             }
-            if (savedInstanceState.containsKey(STATE_POSITION_PLAYER)) {
+            if (savedInstanceState.containsKey(STATE_POSITION_PLAYER) && savedInstanceState.containsKey(STATE_DURATION_PLAYER)) {
                 mCurrentPositionPlayer = savedInstanceState.getInt(STATE_POSITION_PLAYER);
+                mCurrentDurationPlayer = savedInstanceState.getInt(STATE_DURATION_PLAYER);
             }
+        }
+        //if no state value, get duration from item
+        if (mTrack != null && mCurrentDurationPlayer <= 0) {
+            mCurrentDurationPlayer = (int)mTrack.getDurationMs();
         }
 
         //view
@@ -190,24 +213,31 @@ public class PlayerDialogFragment extends DialogFragment implements
         outState.putLong(ARG_ID_MIN, mIdMin);
         outState.putLong(ARG_ID_MAX, mIdMax);
         outState.putInt(STATE_POSITION_PLAYER, mCurrentPositionPlayer);
+        outState.putInt(STATE_DURATION_PLAYER, mCurrentDurationPlayer);
     }
 
     @Override
-    public void onResume() {
-        super.onResume();
+    public void onAttach(Activity activity) {
+        super.onAttach(activity);
 
-        if (mediaPlayer != null) {
-            mediaPlayer.start();
-            mHandler.sendEmptyMessage(SHOW_PROGRESS);
+        if (mPlayerBroadcastReceiver == null) {
+            mPlayerBroadcastReceiver = new MyPlayerBroadcastReceiver();
+            IntentFilter intentFilter = new IntentFilter(MyPlayerBroadcastReceiver.ACTION_UPDATE_STATE);
+            LocalBroadcastManager.getInstance(activity).registerReceiver(mPlayerBroadcastReceiver, intentFilter);
         }
+
+        doBindService();
     }
 
     @Override
-    public void onPause() {
-        super.onPause();
+    public void onDetach() {
+        super.onDetach();
 
-        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
-            mediaPlayer.pause();
+        doUnbindService();
+
+        if (mPlayerBroadcastReceiver != null) {
+            LocalBroadcastManager.getInstance(getActivity()).unregisterReceiver(mPlayerBroadcastReceiver);
+            mPlayerBroadcastReceiver = null;
         }
     }
 
@@ -215,16 +245,8 @@ public class PlayerDialogFragment extends DialogFragment implements
     public void onDestroyView() {
         super.onDestroyView();
 
-        if (mediaPlayer != null) {
-            if (mHandler != null) {
-                mHandler.setMediaPlayer(null);
-            }
-            if (mediaPlayer.isPlaying()) {
-                mediaPlayer.stop();
-            }
-
-            mediaPlayer.release();
-            mediaPlayer = null;
+        if (mHandler != null) {
+            mHandler.setPlayerService(null);
         }
     }
 
@@ -268,9 +290,8 @@ public class PlayerDialogFragment extends DialogFragment implements
     }
 
     private void cmd_next_onClick(View v) {
-        if (mediaPlayer != null) {
-            mediaPlayer.reset();
-            mIsMediaPlayerPrepared = false;
+        if (mBoundService != null) {
+            mBoundService.doResetPlayer();
 
             displayCommand();
         }
@@ -281,18 +302,12 @@ public class PlayerDialogFragment extends DialogFragment implements
     }
 
     private void cmd_play_onClick(View v) {
-        if (mediaPlayer != null) {
-            if (mediaPlayer.isPlaying()) {
-                mediaPlayer.pause();
+        if (mBoundService != null) {
+            if (mBoundService.isPlayingPlayer()) {
+                mBoundService.doPausePlayer();
             }
             else {
-                if (mIsMediaPlayerPrepared) {
-                    mediaPlayer.start();
-                    mHandler.sendEmptyMessage(SHOW_PROGRESS);
-                }
-                else {
-                    doPlay();
-                }
+                doPlay();
             }
 
             displayCommand();
@@ -300,9 +315,8 @@ public class PlayerDialogFragment extends DialogFragment implements
     }
 
     private void cmd_prev_onClick(View v) {
-        if (mediaPlayer != null) {
-            mediaPlayer.reset();
-            mIsMediaPlayerPrepared = false;
+        if (mBoundService != null) {
+            mBoundService.doResetPlayer();
 
             displayCommand();
         }
@@ -336,11 +350,13 @@ public class PlayerDialogFragment extends DialogFragment implements
                     .into(img_track);
         }
 
-        String duration = getDurationToString(mTrack.getDurationMs());
-        txt_duration_end.setText(duration);
+        //init with state values
+        txt_duration_end.setText(getDurationToString(mCurrentDurationPlayer));
+        seekBar.setMax(mCurrentDurationPlayer);
+        seekBar.setProgress(mCurrentPositionPlayer);
 
+        //play if possible
         doPlay();
-
         displayCommand();
     }
 
@@ -349,7 +365,7 @@ public class PlayerDialogFragment extends DialogFragment implements
         cmd_prev.setEnabled(mIdTra > mIdMin);
 
         //play or pause
-        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+        if (mBoundService != null && mBoundService.isPlayingPlayer()) {
             cmd_play.setImageResource(android.R.drawable.ic_media_pause);
         }
         else {
@@ -360,7 +376,7 @@ public class PlayerDialogFragment extends DialogFragment implements
         cmd_next.setEnabled(mIdTra < mIdMax);
 
         //seek to 0 if no prepared
-        if (!mIsMediaPlayerPrepared) {
+        if (mBoundService == null || !mBoundService.getIsPreparedPlayer()) {
             seekBar.setProgress(0);
         }
     }
@@ -402,8 +418,8 @@ public class PlayerDialogFragment extends DialogFragment implements
     public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
         //set seek for MediaPlayer
         if (fromUser) {
-            if (mediaPlayer != null && mIsMediaPlayerPrepared) {
-                mediaPlayer.seekTo(progress);
+            if (mBoundService != null) {
+                mBoundService.doSeekToPlayer(progress);
             }
         }
         //update text
@@ -423,77 +439,14 @@ public class PlayerDialogFragment extends DialogFragment implements
 
 
     private void doPlay() {
-        if (mPlayerTasks != null) {
+        if (mBoundService == null) {
             return;
         }
 
-        mPlayerTasks = new PlayerTasks();
-        mPlayerTasks.execute(mTrack.getPreviewUrl());
-    }
-    private class PlayerTasks extends AsyncTask<String, Void, Integer> {
-        @Override
-        protected void onPreExecute() {
-            super.onPreExecute();
-
-            if (mediaPlayer == null) {
-                mediaPlayer = new MediaPlayer();
-                mediaPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
-                mediaPlayer.setOnCompletionListener(new MediaPlayer.OnCompletionListener() {
-                    @Override
-                    public void onCompletion(MediaPlayer mp) {
-                        mHandler.removeMessages(SHOW_PROGRESS);
-                        seekBar.setProgress(0);
-
-                        displayCommand();
-                    }
-                });
-                mHandler.setMediaPlayer(mediaPlayer);
-            }
-        }
-
-        @Override
-        protected Integer doInBackground(String... params) {
-            Integer duration = null;
-
-            String url = (params.length > 0 ? params[0] : null);
-            if (!TextUtils.isEmpty(url)) {
-                mIsMediaPlayerPrepared = false;
-
-                try {
-                    mediaPlayer.reset();
-
-                    mediaPlayer.setDataSource(mTrack.getPreviewUrl());
-                    mediaPlayer.prepare(); // might take long! (for buffering, etc)
-                    mediaPlayer.start();
-
-                    duration = mediaPlayer.getDuration();
-                    if (mCurrentPositionPlayer > 0 && mCurrentPositionPlayer < duration) {
-                        mediaPlayer.seekTo(mCurrentPositionPlayer);
-                    }
-
-                    mIsMediaPlayerPrepared = true;
-                } catch (Exception e) {
-                    e.printStackTrace();
-
-                    mediaPlayer.reset();
-                }
-            }
-            return duration;
-        }
-
-        @Override
-        protected void onPostExecute(Integer duration) {
-            super.onPostExecute(duration);
-            mPlayerTasks = null;
-
-            if (mIsMediaPlayerPrepared) {
-                txt_duration_end.setText(getDurationToString(duration));
-                seekBar.setMax(duration);
-                mHandler.sendEmptyMessage(SHOW_PROGRESS);
-            }
-
-            displayCommand();
-        }
+        //start playing
+        mBoundService.doPlayPlayer(mTrack);
+        //start update seeker
+        mHandler.sendEmptyMessage(SHOW_PROGRESS);
     }
 
 
@@ -535,11 +488,11 @@ public class PlayerDialogFragment extends DialogFragment implements
 
 
     private static class ProgressHandler extends Handler {
-        private MediaPlayer mediaPlayer = null;
+        private PlayerService playerService = null;
         private SeekBar seekBar = null;
 
-        public void setMediaPlayer(MediaPlayer mediaPlayer) {
-            this.mediaPlayer = mediaPlayer;
+        public void setPlayerService(PlayerService playerService) {
+            this.playerService = playerService;
         }
         public void setSeekBar(SeekBar seekBar) {
             this.seekBar = seekBar;
@@ -547,16 +500,18 @@ public class PlayerDialogFragment extends DialogFragment implements
 
         @Override
         public void handleMessage(Message msg) {
-            int pos;
             switch (msg.what) {
                 case SHOW_PROGRESS:
-                    pos = seekBar.getProgress();
-                    if (mediaPlayer != null && mediaPlayer.isPlaying()) {//!mDragging && mShowing &&
-                        int progress = mediaPlayer.getCurrentPosition();
+                    //if can get position, show it
+                    if (playerService != null && playerService.getIsPreparedPlayer()) {
+                        int progress = playerService.getCurrentPositionPlayer();
                         seekBar.setProgress(progress);
 
-                        msg = obtainMessage(SHOW_PROGRESS);
-                        sendMessageDelayed(msg, 500);
+                        //if playing, continue to update
+                        if (playerService.isPlayingPlayer()) {
+                            msg = obtainMessage(SHOW_PROGRESS);
+                            sendMessageDelayed(msg, 500);
+                        }
                     }
                     break;
             }
@@ -580,5 +535,90 @@ public class PlayerDialogFragment extends DialogFragment implements
         }
         duration += seconds;
         return duration;
+    }
+
+
+    private ServiceConnection mConnection = new ServiceConnection() {
+        public void onServiceConnected(ComponentName className, IBinder service) {
+            // This is called when the connection with the service has been
+            // established, giving us the service object we can use to
+            // interact with the service.  Because we have bound to a explicit
+            // service that we know is running in our own process, we can
+            // cast its IBinder to a concrete class and directly access it.
+            mBoundService = ((PlayerService.SpotifyStreamerBinder)service).getService();
+
+            //init
+            mHandler.setPlayerService(mBoundService);
+
+            //if the same track and duration already available, update seeker only
+            if (mTrack.getId().equals(mBoundService.getCurrentTrackId()) &&
+                    mBoundService.getIsPreparedPlayer()) {
+                //init max
+                int duration = mBoundService.getDurationPlayer();
+                txt_duration_end.setText(getDurationToString(duration));
+                seekBar.setMax(duration);
+                mCurrentDurationPlayer = duration;
+                //show progress
+                mHandler.sendEmptyMessage(SHOW_PROGRESS);
+            }
+            //if not already started, start to play
+            else {
+                doPlay();
+            }
+
+            displayCommand();
+        }
+
+        public void onServiceDisconnected(ComponentName className) {
+            // This is called when the connection with the service has been
+            // unexpectedly disconnected -- that is, its process crashed.
+            // Because it is running in our same process, we should never
+            // see this happen.
+            mBoundService = null;
+
+            mHandler.removeMessages(SHOW_PROGRESS);
+            mHandler.setPlayerService(null);
+        }
+    };
+
+    void doBindService() {
+        Context context = getActivity().getApplicationContext();
+
+        // Establish a connection with the service.
+        context.bindService(new Intent(context,
+                PlayerService.class), mConnection, Context.BIND_AUTO_CREATE);
+        mIsBound = true;
+    }
+
+    void doUnbindService() {
+        Context context = getActivity().getApplicationContext();
+
+        if (mIsBound) {
+            // Detach our existing connection.
+            context.unbindService(mConnection);
+            mIsBound = false;
+        }
+    }
+
+    private class MyPlayerBroadcastReceiver extends BasePlayerBroadcastReceiver {
+        @Override
+        public void onReceive_onPrepared(Context context, Intent intent, int duration) {
+            //init max
+            txt_duration_end.setText(getDurationToString(duration));
+            seekBar.setMax(duration);
+            mCurrentDurationPlayer = duration;
+            //show progress
+            mHandler.sendEmptyMessage(SHOW_PROGRESS);
+
+            displayCommand();
+        }
+
+        @Override
+        public void onReceive_onCompletion(Context context, Intent intent) {
+            mHandler.removeMessages(SHOW_PROGRESS);
+            seekBar.setProgress(0);
+
+            displayCommand();
+        }
     }
 }

@@ -2,15 +2,16 @@ package com.adipso.udacity.spotifystreamer_p2.activity;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.os.Bundle;
 import android.support.v4.app.Fragment;
 import android.support.v7.app.AppCompatActivity;
-import android.os.Bundle;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Toast;
 
 import com.adipso.udacity.spotifystreamer_p2.R;
 import com.adipso.udacity.spotifystreamer_p2.model.CustomTrack;
+import com.adipso.udacity.spotifystreamer_p2.service.PlayerService;
 
 public class PlayerActivity extends AppCompatActivity {
     public static void startActivity(Activity activity, Long _idTra, CustomTrack track, Long idMin, Long idMax) {
@@ -47,6 +48,14 @@ public class PlayerActivity extends AppCompatActivity {
                     .add(R.id.container, fragment)
                     .commit();
         }
+    }
+
+    @Override
+    public void onBackPressed() {
+        super.onBackPressed();
+
+        //back from PlayerActivity => stop MediaPlayer
+        stopService(new Intent(this, PlayerService.class));
     }
 
 

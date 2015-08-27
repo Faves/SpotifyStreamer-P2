@@ -1,13 +1,16 @@
 package com.adipso.udacity.spotifystreamer_p2.activity;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Toast;
 
 import com.adipso.udacity.spotifystreamer_p2.R;
+import com.adipso.udacity.spotifystreamer_p2.service.PlayerService;
 
 
 /**
@@ -55,6 +58,17 @@ public class ArtistListActivity extends AppCompatActivity
         }
     }
 
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        //Log.d("ArtAct", "focus : "+(hasFocus ? "yes" : "no"));
+
+        //if dialog for MediaPlayer
+        if (mTwoPane) {
+            //if "hasFocus", the dialog is not visible => stop MediaPlayer
+            stopService(new Intent(this, PlayerService.class));
+        }
+    }
 
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
