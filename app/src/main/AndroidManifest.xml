@@ -14,7 +14,8 @@
         <activity
             android:name=".activity.ArtistListActivity"
             android:label="@string/app_name"
-            android:windowSoftInputMode="adjustPan" >
+            android:windowSoftInputMode="adjustPan"
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -24,7 +25,8 @@
         <activity
             android:name=".activity.ArtistDetailActivity"
             android:label="@string/title_artist_detail"
-            android:parentActivityName=".activity.ArtistListActivity" >
+            android:parentActivityName=".activity.ArtistListActivity"
+            android:launchMode="singleTop">
             <meta-data
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value="com.adipso.udacity.spotifystreamer_p2.activity.ArtistListActivity" />
@@ -32,7 +34,11 @@
         <activity
             android:name=".activity.PlayerActivity"
             android:label="@string/app_name"
-            android:screenOrientation="sensorPortrait" >
+            android:screenOrientation="sensorPortrait"
+            android:parentActivityName=".activity.ArtistDetailActivity" >
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value="com.adipso.udacity.spotifystreamer_p2.activity.ArtistDetailActivity" />
         </activity>
 
         <service

@@ -4,13 +4,9 @@ import android.app.Activity;
 import android.app.Dialog;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
-import android.media.AudioManager;
-import android.media.MediaPlayer;
-import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -23,7 +19,6 @@ import android.support.v4.content.AsyncTaskLoader;
 import android.support.v4.content.Loader;
 import android.support.v4.content.LocalBroadcastManager;
 import android.text.TextUtils;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
@@ -96,6 +91,17 @@ public class PlayerDialogFragment extends DialogFragment implements
     private int mCurrentPositionPlayer;
     private int mCurrentDurationPlayer;
     private MyPlayerBroadcastReceiver mPlayerBroadcastReceiver;
+    private OnPlayerDialogFragmentCallbacks mCallback;
+    private boolean mHasSavedInstanceState;
+
+    /*
+     * to not start service to keep it alive if dialog is closing
+     * cf ArtistListActivity.onWindowFocusChanged
+     **/
+    private boolean mIsDialogClosing;
+    public void setIsDialogClosing(boolean isDialogClosing) {
+        this.mIsDialogClosing = isDialogClosing;
+    }
 
     public PlayerDialogFragment() {
         super();
@@ -103,6 +109,9 @@ public class PlayerDialogFragment extends DialogFragment implements
         mIsBound = false;
         mBoundService = null;
         mPlayerBroadcastReceiver = null;
+        mCallback = null;
+        mIsDialogClosing = false;
+        mHasSavedInstanceState = false;
     }
 
     /** The system calls this only when creating the layout in a dialog. */
@@ -116,16 +125,6 @@ public class PlayerDialogFragment extends DialogFragment implements
         Dialog dialog = super.onCreateDialog(savedInstanceState);
         dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         return dialog;
-    }
-
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        //start PlayerService to keep it alive on rotation
-        Activity activity = getActivity();
-        Intent intent = new Intent(activity, PlayerService.class);
-        activity.startService(intent);
     }
 
     /** The system calls this to get the DialogFragment's layout, regardless
@@ -142,6 +141,7 @@ public class PlayerDialogFragment extends DialogFragment implements
         mHandler = new ProgressHandler();
         mCurrentPositionPlayer = 0;
         mCurrentDurationPlayer = 0;
+        mHasSavedInstanceState = (savedInstanceState != null);
 
         //params
         mIdTra = mIdMin = mIdMax = null;
@@ -200,6 +200,10 @@ public class PlayerDialogFragment extends DialogFragment implements
 
         //datas
         displayDatas();
+        if (!mHasSavedInstanceState) {
+            doPlay();
+            displayCommand();
+        }
 
         return rootView;
     }
@@ -220,12 +224,21 @@ public class PlayerDialogFragment extends DialogFragment implements
     public void onAttach(Activity activity) {
         super.onAttach(activity);
 
+        // Activities containing this fragment must implement its callbacks.
+        if (!(activity instanceof OnPlayerDialogFragmentCallbacks)) {
+            throw new IllegalStateException("Activity must implement fragment's callbacks.");
+        }
+        mCallback = (OnPlayerDialogFragmentCallbacks)activity;
+        mCallback.onPlayerDialogFragmentAttached(this);
+
+        //start listen messages of service to update view
         if (mPlayerBroadcastReceiver == null) {
             mPlayerBroadcastReceiver = new MyPlayerBroadcastReceiver();
             IntentFilter intentFilter = new IntentFilter(MyPlayerBroadcastReceiver.ACTION_UPDATE_STATE);
             LocalBroadcastManager.getInstance(activity).registerReceiver(mPlayerBroadcastReceiver, intentFilter);
         }
 
+        //bind service
         doBindService();
     }
 
@@ -233,22 +246,32 @@ public class PlayerDialogFragment extends DialogFragment implements
     public void onDetach() {
         super.onDetach();
 
+        //ubind service
         doUnbindService();
 
+        //stop listen messages of service (no view displayed)
         if (mPlayerBroadcastReceiver != null) {
             LocalBroadcastManager.getInstance(getActivity()).unregisterReceiver(mPlayerBroadcastReceiver);
             mPlayerBroadcastReceiver = null;
         }
+
+        if (mCallback != null) {
+            mCallback.onPlayerDialogFragmentDetached();
+        }
+        mCallback = null;
     }
 
     @Override
-    public void onDestroyView() {
-        super.onDestroyView();
+    public void onPause() {
+        super.onPause();
 
-        if (mHandler != null) {
-            mHandler.setPlayerService(null);
+        //if not closing and if playing, start PlayerService to keep it alive on rotation
+        if (!mIsDialogClosing && mIsBound && mBoundService.isPlayingPlayer()) {
+            Context context = getActivity().getApplicationContext();
+            PlayerService.startActionOnPlay(context, mTrack);
         }
     }
+
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
@@ -290,7 +313,7 @@ public class PlayerDialogFragment extends DialogFragment implements
     }
 
     private void cmd_next_onClick(View v) {
-        if (mBoundService != null) {
+        if (mIsBound) {
             mBoundService.doResetPlayer();
 
             displayCommand();
@@ -302,7 +325,7 @@ public class PlayerDialogFragment extends DialogFragment implements
     }
 
     private void cmd_play_onClick(View v) {
-        if (mBoundService != null) {
+        if (mIsBound) {
             if (mBoundService.isPlayingPlayer()) {
                 mBoundService.doPausePlayer();
             }
@@ -315,7 +338,7 @@ public class PlayerDialogFragment extends DialogFragment implements
     }
 
     private void cmd_prev_onClick(View v) {
-        if (mBoundService != null) {
+        if (mIsBound) {
             mBoundService.doResetPlayer();
 
             displayCommand();
@@ -355,8 +378,6 @@ public class PlayerDialogFragment extends DialogFragment implements
         seekBar.setMax(mCurrentDurationPlayer);
         seekBar.setProgress(mCurrentPositionPlayer);
 
-        //play if possible
-        doPlay();
         displayCommand();
     }
 
@@ -365,7 +386,7 @@ public class PlayerDialogFragment extends DialogFragment implements
         cmd_prev.setEnabled(mIdTra > mIdMin);
 
         //play or pause
-        if (mBoundService != null && mBoundService.isPlayingPlayer()) {
+        if (mIsBound && mBoundService.isPlayingPlayer()) {
             cmd_play.setImageResource(android.R.drawable.ic_media_pause);
         }
         else {
@@ -376,7 +397,7 @@ public class PlayerDialogFragment extends DialogFragment implements
         cmd_next.setEnabled(mIdTra < mIdMax);
 
         //seek to 0 if no prepared
-        if (mBoundService == null || !mBoundService.getIsPreparedPlayer()) {
+        if (mIsBound && !mBoundService.getIsPreparedPlayer()) {
             seekBar.setProgress(0);
         }
     }
@@ -406,6 +427,8 @@ public class PlayerDialogFragment extends DialogFragment implements
                 mIdTra = data.get_ID();
 
                 displayDatas();
+                doPlay();
+                displayCommand();
             }
         }
     }
@@ -418,7 +441,7 @@ public class PlayerDialogFragment extends DialogFragment implements
     public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
         //set seek for MediaPlayer
         if (fromUser) {
-            if (mBoundService != null) {
+            if (mIsBound) {
                 mBoundService.doSeekToPlayer(progress);
             }
         }
@@ -439,7 +462,7 @@ public class PlayerDialogFragment extends DialogFragment implements
 
 
     private void doPlay() {
-        if (mBoundService == null) {
+        if (!mIsBound) {
             return;
         }
 
@@ -546,6 +569,7 @@ public class PlayerDialogFragment extends DialogFragment implements
             // service that we know is running in our own process, we can
             // cast its IBinder to a concrete class and directly access it.
             mBoundService = ((PlayerService.SpotifyStreamerBinder)service).getService();
+            mIsBound = true;
 
             //init
             mHandler.setPlayerService(mBoundService);
@@ -553,18 +577,16 @@ public class PlayerDialogFragment extends DialogFragment implements
             //if the same track and duration already available, update seeker only
             if (mTrack.getId().equals(mBoundService.getCurrentTrackId()) &&
                     mBoundService.getIsPreparedPlayer()) {
-                //init max
-                int duration = mBoundService.getDurationPlayer();
-                txt_duration_end.setText(getDurationToString(duration));
-                seekBar.setMax(duration);
-                mCurrentDurationPlayer = duration;
-                //show progress
-                mHandler.sendEmptyMessage(SHOW_PROGRESS);
+                //init
+                mCurrentDurationPlayer = mBoundService.getDurationPlayer();
+                mCurrentPositionPlayer = mBoundService.getCurrentPositionPlayer();
             }
-            //if not already started, start to play
-            else {
+            //if not in saved state and if not already started, start to play
+            else if (!mHasSavedInstanceState) {
                 doPlay();
             }
+            //show progress
+            mHandler.sendEmptyMessage(SHOW_PROGRESS);
 
             displayCommand();
         }
@@ -575,6 +597,7 @@ public class PlayerDialogFragment extends DialogFragment implements
             // Because it is running in our same process, we should never
             // see this happen.
             mBoundService = null;
+            mIsBound = false;
 
             mHandler.removeMessages(SHOW_PROGRESS);
             mHandler.setPlayerService(null);
@@ -587,7 +610,6 @@ public class PlayerDialogFragment extends DialogFragment implements
         // Establish a connection with the service.
         context.bindService(new Intent(context,
                 PlayerService.class), mConnection, Context.BIND_AUTO_CREATE);
-        mIsBound = true;
     }
 
     void doUnbindService() {
@@ -620,5 +642,11 @@ public class PlayerDialogFragment extends DialogFragment implements
 
             displayCommand();
         }
+    }
+
+
+    public static interface OnPlayerDialogFragmentCallbacks {
+        public void onPlayerDialogFragmentAttached(PlayerDialogFragment playerDialogFragment);
+        public void onPlayerDialogFragmentDetached();
     }
 }

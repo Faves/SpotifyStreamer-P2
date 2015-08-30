@@ -4,7 +4,6 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
 import android.support.v7.app.AppCompatActivity;
-import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.widget.Toast;
@@ -29,8 +28,9 @@ import com.adipso.udacity.spotifystreamer_p2.service.PlayerService;
  * {@link ArtistListFragment.ArtistListCallbacks} interface
  * to listen for item selections.
  */
-public class ArtistListActivity extends AppCompatActivity
-        implements ArtistListFragment.ArtistListCallbacks {
+public class ArtistListActivity extends AppCompatActivity implements
+        ArtistListFragment.ArtistListCallbacks,
+        PlayerDialogFragment.OnPlayerDialogFragmentCallbacks {
 
     /**
      * Whether or not the activity is in two-pane mode, i.e. running on a tablet
@@ -38,11 +38,14 @@ public class ArtistListActivity extends AppCompatActivity
      */
     private boolean mTwoPane;
 
+    private PlayerDialogFragment mCurrentPlayerDialogFragment = null;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_artist_list);
 
+        //view
         if (findViewById(R.id.artist_detail_container) != null) {
             // The detail container view will be present only in the
             // large-screen layouts (res/values-large and
@@ -64,7 +67,11 @@ public class ArtistListActivity extends AppCompatActivity
         //Log.d("ArtAct", "focus : "+(hasFocus ? "yes" : "no"));
 
         //if dialog for MediaPlayer
-        if (mTwoPane) {
+        if (mTwoPane && hasFocus) {
+            //if dialod available, say it to not keep service alive because we don't neet it
+            if (mCurrentPlayerDialogFragment != null) {
+                mCurrentPlayerDialogFragment.setIsDialogClosing(true);
+            }
             //if "hasFocus", the dialog is not visible => stop MediaPlayer
             stopService(new Intent(this, PlayerService.class));
         }
@@ -117,5 +124,15 @@ public class ArtistListActivity extends AppCompatActivity
             // for the selected item ID.
             ArtistDetailActivity.startActivity(this, id, subTitle);
         }
+    }
+
+
+    @Override
+    public void onPlayerDialogFragmentAttached(PlayerDialogFragment playerDialogFragment) {
+        this.mCurrentPlayerDialogFragment = playerDialogFragment;
+    }
+    @Override
+    public void onPlayerDialogFragmentDetached() {
+        this.mCurrentPlayerDialogFragment = null;
     }
 }

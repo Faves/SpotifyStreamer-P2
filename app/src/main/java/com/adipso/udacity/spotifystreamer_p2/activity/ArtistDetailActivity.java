@@ -26,9 +26,13 @@ public class ArtistDetailActivity extends AppCompatActivity {
 
     public static void startActivity(Activity activity, String id, String artistName) {
         Intent intent = new Intent(activity, ArtistDetailActivity.class);
+        editIntentToStartActivity(intent, id, artistName);
+        activity.startActivity(intent);
+    }
+    public static void editIntentToStartActivity(Intent intent, String id, String artistName) {
+        intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
         intent.putExtra(ArtistDetailFragment.ARG_ITEM_ID, id);
         intent.putExtra(ARG_ARTIST_NAME, artistName);
-        activity.startActivity(intent);
     }
 
 
@@ -90,17 +94,15 @@ public class ArtistDetailActivity extends AppCompatActivity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here.
+        //
+        // The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        // cf singleTop for ArtistListActivity
         int id = item.getItemId();
-        if (id == android.R.id.home) {
-            // This ID represents the Home or Up button. In the case of this
-            // activity, the Up button is shown. For
-            // more details, see the Navigation pattern on Android Design:
-            //
-            // http://developer.android.com/design/patterns/navigation.html#up-vs-back
-            //
-            navigateUpTo(new Intent(this, ArtistListActivity.class));
-            return true;
-        }
+
+        //noinspection SimplifiableIfStatement
         if (id == R.id.action_settings) {
             Toast.makeText(this, R.string.dialog_msg_no_settings, Toast.LENGTH_SHORT).show();
             return true;

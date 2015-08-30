@@ -15,6 +15,7 @@ public class CustomTrack implements Parcelable {
     private long durationMs;
     private String previewUrl;
     private CustomAlbum album;
+    private String artistId;
     private String artistName;
 
     public CustomTrack() {
@@ -62,6 +63,13 @@ public class CustomTrack implements Parcelable {
         this.album = album;
     }
 
+    public String getArtistId() {
+        return artistId;
+    }
+    public void setArtistId(String artistId) {
+        this.artistId = artistId;
+    }
+
     public String getArtistName() {
         return artistName;
     }
@@ -83,6 +91,7 @@ public class CustomTrack implements Parcelable {
         out.writeLong(durationMs);
         out.writeString(previewUrl);
         out.writeSerializable(album);
+        out.writeString(artistId);
         out.writeString(artistName);
     }
 
@@ -104,6 +113,7 @@ public class CustomTrack implements Parcelable {
         durationMs = in.readLong();
         previewUrl = in.readString();
         album = (CustomAlbum)in.readSerializable();
+        artistId = in.readString();
         artistName = in.readString();
     }
 }

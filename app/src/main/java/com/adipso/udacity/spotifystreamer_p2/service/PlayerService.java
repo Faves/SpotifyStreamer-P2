@@ -1,6 +1,9 @@
 package com.adipso.udacity.spotifystreamer_p2.service;
 
+import android.app.Notification;
+import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
@@ -10,24 +13,26 @@ import android.os.IBinder;
 import android.os.PowerManager;
 import android.support.v4.content.LocalBroadcastManager;
 
+import com.adipso.udacity.spotifystreamer_p2.R;
+import com.adipso.udacity.spotifystreamer_p2.activity.ArtistListActivity;
 import com.adipso.udacity.spotifystreamer_p2.model.CustomTrack;
 
 public class PlayerService extends Service implements
         MediaPlayer.OnPreparedListener,
         MediaPlayer.OnErrorListener,
         MediaPlayer.OnCompletionListener {
-//    private static final String ACTION_PLAY = "com.adipso.udacity.spotifystreamer_p2.service.action.PLAY";
-//    private static final String EXTRA_TRACK = "com.adipso.udacity.spotifystreamer_p2.service.extra.TRACK";
-//
-//    /**
-//     * Starts this service to perform action OnPlay with the given parameters.
-//     */
-//    public static void startActionOnPlay(Context context, CustomTrack track) {
-//        Intent intent = new Intent(context, PlayerService.class);
-//        intent.setAction(ACTION_PLAY);
-//        intent.putExtra(EXTRA_TRACK, track);
-//        context.startService(intent);
-//    }
+    private static final String ACTION_PLAY = "com.adipso.udacity.spotifystreamer_p2.service.action.PLAY";
+    private static final String EXTRA_TRACK = "com.adipso.udacity.spotifystreamer_p2.service.extra.TRACK";
+
+    /**
+     * Starts this service to perform action OnPlay with the given parameters.
+     */
+    public static void startActionOnPlay(Context context, CustomTrack track) {
+        Intent intent = new Intent(context, PlayerService.class);
+        intent.setAction(ACTION_PLAY);
+        intent.putExtra(EXTRA_TRACK, track);
+        context.startService(intent);
+    }
 
 
     // This is the object that receives interactions from clients.
@@ -37,7 +42,6 @@ public class PlayerService extends Service implements
     private CustomTrack mCurrentTrack;
     private boolean mIsMediaPlayerPreparing;
     private boolean mIsMediaPlayerPrepared;
-    private Handler mHandler;
 
     public PlayerService() {
         mMediaPlayer = null;
@@ -49,20 +53,19 @@ public class PlayerService extends Service implements
     public void onCreate() {
         super.onCreate();
         initMediaPlayer();
-
-        mHandler = new Handler();
     }
 
-//    @Override
-//    public int onStartCommand(Intent intent, int flags, int startId) {
-//        super.onStartCommand(intent, flags, startId);
-//
-//        if (intent.getAction().equals(ACTION_PLAY)) {
-//            final CustomTrack track = intent.getParcelableExtra(EXTRA_TRACK);
-//        }
-//
-//        return START_NOT_STICKY;
-//    }
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        int result = super.onStartCommand(intent, flags, startId);
+
+        if (intent.getAction().equals(ACTION_PLAY)) {
+            final CustomTrack track = intent.getParcelableExtra(EXTRA_TRACK);
+            doPlayPlayer(track);
+        }
+
+        return result;
+    }
 
     @Override
     public void onDestroy() {

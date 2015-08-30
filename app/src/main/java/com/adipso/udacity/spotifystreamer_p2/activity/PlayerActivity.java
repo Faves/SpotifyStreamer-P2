@@ -13,7 +13,9 @@ import com.adipso.udacity.spotifystreamer_p2.R;
 import com.adipso.udacity.spotifystreamer_p2.model.CustomTrack;
 import com.adipso.udacity.spotifystreamer_p2.service.PlayerService;
 
-public class PlayerActivity extends AppCompatActivity {
+public class PlayerActivity extends AppCompatActivity implements
+        PlayerDialogFragment.OnPlayerDialogFragmentCallbacks {
+
     public static void startActivity(Activity activity, Long _idTra, CustomTrack track, Long idMin, Long idMax) {
         Intent intent = new Intent(activity, PlayerActivity.class);
         intent.putExtra(PlayerDialogFragment.ARG_ID, _idTra);
@@ -24,6 +26,9 @@ public class PlayerActivity extends AppCompatActivity {
     }
 
 
+    private CustomTrack mTrack;
+    private PlayerDialogFragment mCurrentPlayerDialogFragment = null;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -31,19 +36,19 @@ public class PlayerActivity extends AppCompatActivity {
 
         //args
         Long idTra = 0L, idMin = 0L, idMax = 0L;
-        CustomTrack track = null;
+        mTrack = null;
         if (getIntent() != null &&
                 getIntent().hasExtra(PlayerDialogFragment.ARG_ID) &&
                 getIntent().hasExtra(PlayerDialogFragment.ARG_TRACK)) {
             idTra = getIntent().getLongExtra(PlayerDialogFragment.ARG_ID, 0L);
-            track = getIntent().getParcelableExtra(PlayerDialogFragment.ARG_TRACK);
+            mTrack = getIntent().getParcelableExtra(PlayerDialogFragment.ARG_TRACK);
             idMin = getIntent().getLongExtra(PlayerDialogFragment.ARG_ID_MIN, 0L);
             idMax = getIntent().getLongExtra(PlayerDialogFragment.ARG_ID_MAX, 0L);
         }
 
         //view
         if (savedInstanceState == null) {
-            Fragment fragment = PlayerDialogFragment.createFragment(idTra, track, idMin, idMax);
+            Fragment fragment = PlayerDialogFragment.createFragment(idTra, mTrack, idMin, idMax);
             getSupportFragmentManager().beginTransaction()
                     .add(R.id.container, fragment)
                     .commit();
@@ -54,7 +59,15 @@ public class PlayerActivity extends AppCompatActivity {
     public void onBackPressed() {
         super.onBackPressed();
 
-        //back from PlayerActivity => stop MediaPlayer
+        doStopMediaPlayer();
+    }
+
+    private void doStopMediaPlayer() {
+        //if fragment available, say it to not keep service alive because we don't neet it
+        if (mCurrentPlayerDialogFragment != null) {
+            mCurrentPlayerDialogFragment.setIsDialogClosing(true);
+        }
+        //if "hasFocus", the dialog is not visible => stop MediaPlayer
         stopService(new Intent(this, PlayerService.class));
     }
 
@@ -68,17 +81,34 @@ public class PlayerActivity extends AppCompatActivity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        // Handle action bar item clicks here. The action bar will
+        // Handle action bar item clicks here.
+        //
+        // The action bar will
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
+        // cf singleTop for ArtistDetailActivity
         int id = item.getItemId();
 
-        //noinspection SimplifiableIfStatement
+        //intercept Home/Up button to stop MediaPlayer
+        if (id == android.R.id.home) {
+            doStopMediaPlayer();
+            return false;   //return false to use default implementation
+        }
         if (id == R.id.action_settings) {
             Toast.makeText(this, R.string.dialog_msg_no_settings, Toast.LENGTH_SHORT).show();
             return true;
         }
 
         return super.onOptionsItemSelected(item);
+    }
+
+
+    @Override
+    public void onPlayerDialogFragmentAttached(PlayerDialogFragment playerDialogFragment) {
+        this.mCurrentPlayerDialogFragment = playerDialogFragment;
+    }
+    @Override
+    public void onPlayerDialogFragmentDetached() {
+        this.mCurrentPlayerDialogFragment = null;
     }
 }
